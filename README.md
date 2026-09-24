@@ -131,8 +131,8 @@ should fix the host rather than trust the result.
 ## Testing
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv sync --extra dev
+uv run pytest
 ```
 
 The derivation layer is pure functions over dataclasses, so the suite runs with
