@@ -37,6 +37,17 @@ CURRENT_VERSIONS: list[tuple[str, Any]] = [
     ("TLSv1.2", getattr(ssl.TLSVersion, "TLSv1_2", None)),
     ("TLSv1.3", getattr(ssl.TLSVersion, "TLSv1_3", None)),
 ]
+_NEGOTIATED_NAMES: dict[Any, str] = {
+    version: name
+    for version, name in (
+        (getattr(ssl.TLSVersion, "SSLv3", None), "SSLv3"),
+        (getattr(ssl.TLSVersion, "TLSv1", None), "TLSv1"),
+        (getattr(ssl.TLSVersion, "TLSv1_1", None), "TLSv1.1"),
+        (getattr(ssl.TLSVersion, "TLSv1_2", None), "TLSv1.2"),
+        (getattr(ssl.TLSVersion, "TLSv1_3", None), "TLSv1.3"),
+    )
+    if version is not None
+}
 
 
 @dataclass
@@ -185,6 +196,9 @@ def _is_ca(cert) -> bool:
 def _probe_version(host: str, port: int, version: Any, timeout: float) -> bool | None:
     """Return True if accepted, False if rejected, None if untestable locally.
 
+    True requires both a successful handshake *and* confirmation that the
+    connection was negotiated at the requested version.
+
     None is the important case. Distributions compiled with `no-ssl3`, and
     systems under RHEL-style crypto-policies, refuse to *offer* old protocols
     at all. Reporting that as "not supported by the server" would be a false
@@ -205,8 +219,12 @@ def _probe_version(host: str, port: int, version: Any, timeout: float) -> bool |
         return None
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
-            with ctx.wrap_socket(sock, server_hostname=host):
-                return True
+            with ctx.wrap_socket(sock, server_hostname=host) as tls:
+                negotiated = tls.version()
+                expected = _NEGOTIATED_NAMES.get(version)
+                if expected is None:
+                    return None
+                return negotiated == expected
     except (ssl.SSLError, OSError):
         return False
 
@@ -273,12 +291,9 @@ def inspect_tls(
         except (ssl.SSLError, OSError) as exc:
             res.error = f"{type(exc).__name__}: {exc}"
 
-    # Chain length: available natively from 3.13, otherwise left unknown
-    # rather than guessed.
-    res.chain_length = None
-    res.missing_intermediate = (
-        res.bad_chain if res.bad_chain is not None else None
-    )
+    # chain_length stays None: reading the served chain needs
+    # SSLSocket.get_unverified_chain(), which is 3.13+.
+    res.missing_intermediate = res.bad_chain
 
     if enumerate_protocols and res.reachable:
         for label, version in DEPRECATED_VERSIONS + CURRENT_VERSIONS:

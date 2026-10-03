@@ -7,9 +7,12 @@ extensions for attack-surface management.
 ## Why this exists
 
 pshtt cannot be installed on any currently supported Python. Its latest release
-(0.7.6) declares `sslyze>=3.0.0,<5.0.0`, and the nassl builds that satisfies only
-ever published `cp37`/`cp38` wheels. Every downstream project has dealt with this
-by pinning Python 3.7, vendoring a patched sslyze, or giving up.
+(0.7.6) declares `sslyze>=3.0.0,<5.0.0`, and the nassl versions that satisfies
+published wheels only for `cp37` and `cp38` — both long past end of life.
+Downstream projects have worked around this by pinning Python 3.7, vendoring a
+patched sslyze, or dropping the dependency. CISA's own ASM platform (XFD) carries
+an `"sslyze": True` option with a comment reminding maintainers to test their
+patched sslyze setup.
 
 The root cause is a dependency on version-locked CPython C extensions. This
 package avoids that category entirely:
@@ -18,7 +21,7 @@ package avoids that category entirely:
 |---|---|
 | `ssl` (stdlib) | Ships with the interpreter. Does the TLS work. |
 | `httpx`, `anyio` | Pure Python. |
-| `cryptography` | Ships `cp37-abi3` wheels. One wheel works on every future CPython 3.x. |
+| `cryptography` | Ships abi3 wheels. One wheel works across future CPython 3.x releases. |
 | `publicsuffixlist` | Pure Python data package. |
 
 Supporting a new Python release should require no changes here.
@@ -60,31 +63,7 @@ httpstance -f domains.txt --concurrency 20 --no-protocol-enumeration
 | `ca_file` | `None` | Custom truststore. Sets `HTTPS Custom Truststore Trusted`. |
 | `preload_list` | `None` | `set[str]` of HSTS-preloaded domains. Without it, the three preload fields are `None` rather than a guess. |
 
-Hyphenated pshtt-style keys (`cache-third-parties`) are accepted and normalised.
-
-## Migrating the XFD task
-
-The XFD `pshtt` task chunks subdomains into groups of ten and calls
-`pshtt.inspect_domains(subdomain_list, options)`. Replace the import and delete
-the chunking loop, since concurrency is handled internally:
-
-```python
--from pshtt import pshtt
-+import httpstance
-...
--    chunked_sub_domains = list(chunk_list(sub_domains, 10))
--    for chunk in chunked_sub_domains:
--        subdomain_list = [s.sub_domain for s in chunk]
--        pshtt_results = pshtt.inspect_domains(subdomain_list, options)
-+    subdomain_list = [s.sub_domain for s in sub_domains]
-+    pshtt_results = httpstance.inspect_domains(
-+        subdomain_list, {"timeout": 30, "concurrency": 10}
-+    )
-```
-
-Every key the `PshttResults` model reads is present with the same name, including
-the `endpoints` sub-dict with `http`, `https`, `httpwww` and `httpswww`. The
-`"sslyze": True` option is unnecessary and ignored.
+Hyphenated pshtt-style keys (`cache-third-parties`) are accepted and normalized.
 
 ## What it reports beyond pshtt
 
@@ -138,3 +117,10 @@ uv run pytest
 The derivation layer is pure functions over dataclasses, so the suite runs with
 no network, no sockets, and no fixtures beyond literal dicts. That is the layer
 where the logic errors live.
+
+Tests marked `live` make real TLS connections to
+[badssl.com](https://badssl.com) and are skipped by default. Use the `--live` flag to run them:
+
+```bash
+uv run pytest --live
+```
