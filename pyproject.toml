@@ -12,7 +12,7 @@ license = { text = "CC0-1.0" }
 dependencies = [
     "httpx>=0.27",
     "anyio>=4.0",
-    # cryptography ships abi3 wheels (cp37-abi3), so one wheel keeps working on
+    # cryptography ships abi3 wheels, so one wheel keeps working on
     # every future CPython 3.x without a new release. This is the structural
     # reason this package will not repeat pshtt's nassl problem.
     "cryptography>=42.0",
@@ -30,3 +30,7 @@ packages = ["src/httpstance"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "live: test makes real network connections (skipped by default)",
+]
+addopts = "-rs"
